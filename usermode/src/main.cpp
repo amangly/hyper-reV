@@ -4,10 +4,44 @@
 #include "util/log.hpp"
 #include "hypercall/hypercall.hpp"
 
+#include <cstdio>
+#include <fcntl.h>
+#include <io.h>
 #include <string_view>
 
 int main(const int argc, char* argv[])
 {
+	if (argc == 2 && std::string_view{ argv[1] } == "--bridge")
+	{
+		std::setvbuf(stdout, nullptr, _IONBF, 0);
+		std::setvbuf(stderr, nullptr, _IONBF, 0);
+		// Keep UTF-8 input untouched and emit exact LF protocol delimiters on Windows.
+		if (_setmode(_fileno(stdin), _O_BINARY) == -1 ||
+			_setmode(_fileno(stdout), _O_BINARY) == -1 ||
+			_setmode(_fileno(stderr), _O_BINARY) == -1)
+		{
+			LOG_ERR("bridge startup: failed to configure binary stdio");
+			return 1;
+		}
+
+		const auto response = hc::test();
+		if (response != 0x1337)
+		{
+			LOG_ERR("bridge startup: hyper-reV probe returned 0x{:x} (expected 0x1337)", response);
+			return 2;
+		}
+		// Bridge startup intentionally leaves the hook arena untouched until an akh request.
+		if (!sys::kern::init())
+		{
+			LOG_ERR("bridge startup: kernel initialization failed");
+			return 4;
+		}
+
+		std::fputs("@hyperrev:ready:1\n", stdout);
+		std::fflush(stdout);
+		return cmd::run_bridge();
+	}
+
 	if (argc == 2 && std::string_view{ argv[1] } == "--diagnose")
 		return sys::diagnose();
 
@@ -47,7 +81,7 @@ int main(const int argc, char* argv[])
 
 	if (argc > 1)
 	{
-		LOG_INFO("Usage: usermode.exe [--check|--diagnose|--modules]");
+		LOG_INFO("Usage: usermode.exe [--check|--diagnose|--modules|--bridge]");
 		return 64;
 	}
 

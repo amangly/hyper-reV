@@ -379,6 +379,8 @@ Run these checks separately from an elevated terminal. Each skips hook initializ
 
 `--check` tests the attachment probe and CR3. `--diagnose` also checks virtual-memory copying, kernel headers, module discovery, and exports. `--modules` prints the debugger's module list. Successful checks return exit code `0`.
 
+The optional [hyper-reV DSH plugin](https://github.com/amangly/dsh-hyperrev) exposes these commands and the native CLI through a left sidebar. It starts `usermode.exe --bridge`, keeps one process alive for hook state and logs, and sends one command line at a time over stdin. Configure the published executable path in the plugin before connecting.
+
 The firmware unit tests use an in-memory store and temporary files:
 
 ```powershell

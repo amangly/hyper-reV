@@ -1,5 +1,6 @@
 #include "cmd.hpp"
 #include "alias.hpp"
+#include "bridge_protocol.hpp"
 
 #include "../arch/arch.hpp"
 #include "../hook/hook.hpp"
@@ -12,6 +13,8 @@
 #include <CLI/CLI.hpp>
 
 #include <cstdint>
+#include <cstdio>
+#include <exception>
 #include <iostream>
 #include <string>
 #include <vector>
@@ -442,9 +445,11 @@ namespace
 		LOG_INFO("alias value: 0x{:X}", GET_U64(gva, alias_name));
 	}
 
-	void process(const std::string& command)
+	// Legacy handlers report operation results through their existing output. Zero here means
+	// dispatch completed, rather than asserting that every underlying debugger operation succeeded.
+	int process(const std::string& command)
 	{
-		if (command.empty()) return;
+		if (command.empty()) return 0;
 
 		sys::kern::parse_modules();
 
@@ -482,7 +487,15 @@ namespace
 			PROCESS_COMMAND(rgvm);
 			PROCESS_COMMAND(wgvm);
 			PROCESS_COMMAND(cgvm);
-			PROCESS_COMMAND(akh);
+			else if (*akh)
+			{
+				if (!hook::init())
+				{
+					LOG_ERR("akh: hook subsystem initialization failed");
+					return 1;
+				}
+				INVOKE_COMMAND_PROCESSOR(akh);
+			}
 			PROCESS_COMMAND(rkh);
 			PROCESS_COMMAND(gva);
 			PROCESS_COMMAND(hgpp);
@@ -491,12 +504,105 @@ namespace
 			PROCESS_COMMAND(lkm);
 			PROCESS_COMMAND(kme);
 			PROCESS_COMMAND(dkm);
+			else
+				return 1;
+			return 0;
 		}
 		catch (const CLI::ParseError& e)
 		{
-			app.exit(e);
+			return app.exit(e);
 		}
 	}
+
+	void flush_bridge_output()
+	{
+		std::cout.flush();
+		std::cerr.flush();
+		std::clog.flush();
+		std::fflush(stdout);
+		std::fflush(stderr);
+	}
+
+	void print_bridge_error(const cmd::bridge::request& request)
+	{
+		std::printf("@hyperrev:error:%s size=%zu", request.error, request.size);
+		if (request.has_separator)
+			std::printf(" command_size=%zu", request.command_size);
+		std::printf(" max_command=%zu\n", cmd::bridge::max_command_length);
+	}
+}
+
+int cmd::run_bridge() noexcept
+{
+	try
+	{
+		bridge::line line;
+		for (;;)
+		{
+			const auto read = bridge::read_line(std::cin, line);
+			if (read == bridge::read_status::eof)
+				return 0;
+			if (read == bridge::read_status::error)
+			{
+				LOG_ERR("bridge: stdin read failed");
+				flush_bridge_output();
+				return 74;
+			}
+
+			const auto request = bridge::parse_request(line);
+			if (request.id.empty())
+			{
+				// Invalid IDs have no safe correlation token; report without request framing.
+				print_bridge_error(request);
+				flush_bridge_output();
+				continue;
+			}
+
+			std::printf("@hyperrev:begin:%s\n", request.id.c_str());
+			std::fflush(stdout);
+
+			int status = 0;
+			bool exit = false;
+			try
+			{
+				if (request.error)
+				{
+					print_bridge_error(request);
+					status = bridge::invalid_request_status;
+				}
+				else if (request.command == "exit")
+					exit = true;
+				else
+					status = process(request.command);
+			}
+			catch (const std::exception& error)
+			{
+				LOG_ERR("bridge: command failed: {}", error.what());
+				status = 1;
+			}
+			catch (...)
+			{
+				LOG_ERR("bridge: command failed with an unexpected exception");
+				status = 1;
+			}
+
+			flush_bridge_output();
+			std::printf("@hyperrev:end:%s:%d\n", request.id.c_str(), status);
+			std::fflush(stdout);
+			if (exit)
+				return 0;
+		}
+	}
+	catch (const std::exception& error)
+	{
+		LOG_ERR("bridge: transport failed: {}", error.what());
+	}
+	catch (...)
+	{
+		LOG_ERR("bridge: transport failed with an unexpected exception");
+	}
+	flush_bridge_output();
+	return 1;
 }
 
 void cmd::run() noexcept

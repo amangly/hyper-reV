@@ -90,7 +90,10 @@ namespace
 
 bool hook::init() noexcept
 {
-	return arena::init();
+	static bool initialized = false;
+	if (!initialized)
+		initialized = arena::init();
+	return initialized;
 }
 
 bool hook::install(const std::uintptr_t target_va,
