@@ -97,7 +97,7 @@ namespace
         return efi::success;
 	}
 
-	[[nodiscard]] efi::status start_hooked() noexcept
+	[[nodiscard]] efi::status start_original_manager() noexcept
 	{
         EFI_DEVICE_PATH_PROTOCOL* const dev_path = FileDevicePath(
             efi::boot_device, reinterpret_cast<const CHAR16*>(BOOTMGFW_PATH));
@@ -119,6 +119,11 @@ namespace
 
         return boot_img->start();
 	}
+}
+
+efi::status bootmgfw::start_hooked()
+{
+    return start_original_manager();
 }
 
 efi::status bootmgfw::restore_and_start_hooked()

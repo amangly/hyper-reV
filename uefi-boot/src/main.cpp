@@ -34,20 +34,43 @@ UefiMain (
     IN EFI_SYSTEM_TABLE* SystemTable
     )
 {
+#if defined(HYPERREV_STANDALONE_BOOT)
+    Print(reinterpret_cast<const CHAR16*>(L"hyper-reV: standalone firmware launch\r\n"));
+#endif
+
+    Print(reinterpret_cast<const CHAR16*>(L"hyper-reV: locating boot volume\r\n"));
     efi::status stat = efi::find_boot_info();
 
     if (!stat)
-        return stat;
+    {
+        Print(reinterpret_cast<const CHAR16*>(L"hyper-reV: boot volume failed: %r (0x%lx)\r\n"), stat.value(), stat.value());
+        return stat.value();
+    }
 
+    Print(reinterpret_cast<const CHAR16*>(L"hyper-reV: initializing memory\r\n"));
     stat = mem::init();
 
     if (!stat)
-        return stat;
+    {
+        Print(reinterpret_cast<const CHAR16*>(L"hyper-reV: memory initialization failed: %r (0x%lx)\r\n"), stat.value(), stat.value());
+        return stat.value();
+    }
 
+    Print(reinterpret_cast<const CHAR16*>(L"hyper-reV: reading attachment\r\n"));
     stat = hva::load_from_disk();
 
     if (!stat)
-        return stat;
+    {
+        Print(reinterpret_cast<const CHAR16*>(L"hyper-reV: attachment load failed: %r (0x%lx)\r\n"), stat.value(), stat.value());
+        return stat.value();
+    }
 
-    return bootmgfw::restore_and_start_hooked();
+    Print(reinterpret_cast<const CHAR16*>(L"hyper-reV: starting Windows boot manager\r\n"));
+#if defined(HYPERREV_STANDALONE_BOOT)
+    stat = bootmgfw::start_hooked();
+#else
+    stat = bootmgfw::restore_and_start_hooked();
+#endif
+    Print(reinterpret_cast<const CHAR16*>(L"hyper-reV: Windows boot manager returned: %r (0x%lx)\r\n"), stat.value(), stat.value());
+    return stat.value();
 }

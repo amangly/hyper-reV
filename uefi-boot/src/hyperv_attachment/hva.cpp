@@ -7,22 +7,32 @@
 #include <pe/image.hpp>
 #include <boot_info.hpp>
 
+#if defined(HYPERREV_STANDALONE_BOOT)
+#define HVA_PATH L"\\EFI\\hyper-reV\\hyperv-attachment.dll"
+#else
 #define HVA_PATH L"\\efi\\microsoft\\boot\\hyperv-attachment.dll"
+#endif
 
 namespace
 {
 	std::uintptr_t hva_entry_point = 0;
 
-	cstd::expected<cstd::vector<std::uint8_t>, efi::status> read_and_delete() noexcept
+	cstd::expected<cstd::vector<std::uint8_t>, efi::status> read_payload() noexcept
 	{
+#if defined(HYPERREV_STANDALONE_BOOT)
+		auto file = efi::boot_partition.open(HVA_PATH, EFI_FILE_MODE_READ);
+#else
 		auto file = efi::boot_partition.open(HVA_PATH);
+#endif
 
 		if (!file)
 			return cstd::unexpected(file.error());
 
 		const auto file_buf = file->read();
 
+#if !defined(HYPERREV_STANDALONE_BOOT)
 		file->delete_();
+#endif
 
 		return file_buf;
 	}
@@ -32,7 +42,10 @@ namespace
 	{
 		const phys_addr base_addr = mem::heap::alloc_page_aligned(file_img->size());
 		const auto virt_img = reinterpret_cast<pe::image*>(base_addr);
-		
+
+		// AllocatePages leaves contents unspecified; PE virtual tails require zeroes.
+		cstd::crt::memset(virt_img->as(), 0, file_img->size());
+
 		const std::size_t hdrs_size = file_img->nt_hdrs()->optional_hdr.size_of_headers;
 
 		cstd::crt::memcpy(virt_img->as(), file_img->as(), hdrs_size);
@@ -63,7 +76,7 @@ namespace
 
 efi::status hva::load_from_disk()
 {
-	const auto file_buf = read_and_delete();
+	const auto file_buf = read_payload();
 
 	if (!file_buf)
 		return file_buf.error();

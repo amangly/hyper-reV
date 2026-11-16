@@ -57,5 +57,5 @@ concept arch_backend = requires(const boot_info& bi,
 	{ T::set_slat_cr3(::cr3{})    } -> cstd::same_as<void>;
 	{ T::flush_slat_cache()       } -> cstd::same_as<void>;
 
-	{ T::slat_violation()         } -> cstd::same_as<struct ::slat_violation>;
+	{ T::slat_violation()         } -> cstd::same_as<::slat_violation>;
 };
