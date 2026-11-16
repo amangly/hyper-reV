@@ -37,6 +37,7 @@
 	- 7.3. Load script
 	- 7.4. Usage with Secure Boot
 	- 7.5. Usage with TPM
+	- 7.6. Standalone boot and debugger checks
 8. Source code
 9. Tested Windows versions
 10. Credits
@@ -305,8 +306,9 @@ To compile the uefi-boot module, you must install NASM (https://nasm.us) and "ch
 Clone the repository with its submodules, then initialize VisualUefi's own edk2 and openssl submodules (recursive init isn't used because the deeply nested openssl in edk2/CryptoPkg trips Windows path limits and isn't needed):
 
 ```
-git clone --recurse-submodules https://github.com/noahware/hyper-reV.git
+git clone https://github.com/amangly/hyper-reV.git
 cd hyper-reV
+git submodule update --init
 git -C vendor/visual-uefi submodule update --init edk2 openssl
 ```
 
@@ -328,6 +330,69 @@ To load the project with [secure boot](https://access.redhat.com/articles/525464
 
 ## 7.5. Usage with TPM
 If evading an advanced security tool, it is not recommend to run the project with [TPM](https://en.wikipedia.org/wiki/Trusted_Platform_Module) enabled if the security tool performs [boot attestation](https://learn.microsoft.com/en-us/azure/attestation/tpm-attestation-concepts). This is because it can see that the uefi-boot binary was loaded (through info stored in the TPM PCRs or through [measured boot](https://learn.microsoft.com/en-us/azure/security/fundamentals/measured-boot-host-attestation) logs). This paragraph's information is from [Zepta's post](https://www.unknowncheats.me/forum/anti-cheat-bypass/623028-measuredboot-tpm.html).
+
+## 7.6. Standalone boot and debugger checks
+
+Build the EDK2 libraries first, then build the EFI project with `/p:StandaloneBoot=true`:
+
+```powershell
+msbuild uefi-boot\uefi-boot.vcxproj /p:Configuration=Release /p:Platform=x64 /p:StandaloneBoot=true "/p:SolutionDir=$PWD\"
+```
+
+Stage the standalone image and the attachment in the ESP:
+
+```text
+\EFI\hyper-reV\uefi-boot-standalone.efi
+\EFI\hyper-reV\hyperv-attachment.dll
+```
+
+This mode keeps the existing Microsoft boot manager and the attachment file. Launch it through firmware `BootNext`; Windows `BOOTAPP` expects a different entry contract. The [firmware tool](tools/firmware_boot.py) reads the current options and creates a plan for the files already staged on the ESP. Run it from an elevated terminal with 64-bit Python 3.10 or later:
+
+```powershell
+python tools\firmware_boot.py inspect
+python tools\firmware_boot.py plan --directory S:\EFI\hyper-reV --esp-guid "[ESP_GUID]" --reference "[WINDOWS_BOOT_OPTION]" --output build\boot-plan.json
+python tools\firmware_boot.py arm build\boot-plan.json
+```
+
+Replace the placeholders with the staged partition's GPT GUID and its original Windows option from `inspect`, such as `Boot0000`. `plan` saves a JSON file without changing firmware. `arm` sets a one-time selection and preserves `BootOrder`. Restart manually. To cancel the selection or remove the temporary option after testing:
+
+```powershell
+python tools\firmware_boot.py rollback build\boot-plan.json
+```
+
+For usermode, install Visual Studio C++ build tools, the v143 toolset, a Windows SDK, and a bootstrapped [vcpkg](https://github.com/microsoft/vcpkg) checkout. Set `VCPKG_ROOT` to that checkout, then build and publish:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\build-usermode.ps1 -Publish
+.\run-usermode.cmd
+```
+
+The [build helper](tools/build-usermode.ps1) finds MSBuild through PATH or Visual Studio Installer. It also accepts `-MSBuildPath`, `-VcpkgRoot`, `-PlatformToolset`, and `-WindowsSdkVersion`. Publishing creates a fresh executable under `%LOCALAPPDATA%\hyper-reV\bin`, so it inherits that directory's permissions instead of a workspace's Low Integrity label. Low Integrity blocks Windows kernel-module queries even when administrator privileges are present.
+
+Run these checks separately from an elevated terminal. Each skips hook initialization:
+
+```powershell
+.\run-usermode.cmd --check
+.\run-usermode.cmd --diagnose
+.\run-usermode.cmd --modules
+```
+
+`--check` tests the attachment probe and CR3. `--diagnose` also checks virtual-memory copying, kernel headers, module discovery, and exports. `--modules` prints the debugger's module list. Successful checks return exit code `0`.
+
+The firmware unit tests use an in-memory store and temporary files:
+
+```powershell
+python -m unittest discover -s tests -p test_firmware_boot.py
+```
+
+To run the native-query tests, use an x64 Visual Studio Developer Command Prompt:
+
+```bat
+mkdir build\query-tests
+cd build\query-tests
+cl /nologo /std:c++latest /EHsc /W4 /O2 ..\..\tests\query_system_info_test.cpp ..\..\usermode\src\nt\query.cpp /Fe:query-tests.exe /link advapi32.lib
+query-tests.exe
+```
 
 # 8. Source code
 The source code can be found on this [GitHub](https://github.com/noahware/hyper-reV).
