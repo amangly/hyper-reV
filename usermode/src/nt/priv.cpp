@@ -1,4 +1,5 @@
 #include "priv.hpp"
+#include "../util/log.hpp"
 
 #include <Windows.h>
 
@@ -10,10 +11,15 @@ nt::privilege::privilege(const std::uint32_t priv) noexcept
 {
 	BOOLEAN prev = 0;
 
-	if (RtlAdjustPrivilege(priv_, TRUE, FALSE, &prev) >= 0)
+	const auto status = RtlAdjustPrivilege(priv_, TRUE, FALSE, &prev);
+	if (status >= 0)
 	{
 		prev_state_ = prev;
 		acquired_ = true;
+	}
+	else
+	{
+		LOG_ERR("RtlAdjustPrivilege({}) failed: NTSTATUS=0x{:08x}", priv_, static_cast<std::uint32_t>(status));
 	}
 }
 

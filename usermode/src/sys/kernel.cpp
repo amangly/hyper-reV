@@ -1,6 +1,7 @@
 #include "kernel.hpp"
 #include "dump.hpp"
 #include "../nt/kernel_module.hpp"
+#include "../util/log.hpp"
 
 #include <unordered_set>
 
@@ -12,6 +13,11 @@ bool sys::kern::init() noexcept
 		return false;
 
 	parse_modules();
+	if (nt() == modules_list.end())
+	{
+		LOG_ERR("kernel initialization: ntoskrnl.exe metadata or image reads are unavailable");
+		return false;
+	}
 	return true;
 }
 

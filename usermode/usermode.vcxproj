@@ -199,6 +199,7 @@
     <ClInclude Include="src\nt\priv.hpp" />
     <ClInclude Include="src\nt\query.hpp" />
     <ClInclude Include="src\script\script.hpp" />
+    <ClInclude Include="src\sys\diagnose.hpp" />
     <ClInclude Include="src\sys\dump.hpp" />
     <ClInclude Include="src\sys\kernel.hpp" />
     <ClInclude Include="src\sys\sys.hpp" />
