@@ -396,6 +396,20 @@ cl /nologo /std:c++latest /EHsc /W4 /O2 ..\..\tests\query_system_info_test.cpp .
 query-tests.exe
 ```
 
+## 7.7. Rust boot-setup interface
+
+The [Rust loader guide](<loader/README.md>) covers the native GPUI window and CLI. After building the standalone EFI image and matching attachment, publish the bundle:
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\tools\build-loader.ps1 -Publish
+```
+
+Keep the GUI, CLI, `uefi-boot-standalone.efi`, and `hyperv-attachment.dll` together under `%LOCALAPPDATA%\hyper-reV\bin`. Open `hyperrev-loader.exe`; Windows UAC requests elevation when needed. Startup inspects status only. Click **Setup** for automatic discovery, validation, recovery journaling, and installation. **Restore** uses the journal. **Advanced** reveals Files/ESP/Journal browsing, Defaults, Refresh, Copy details, and the raw report. Separate Plan/Apply and reference selection remain CLI options.
+
+Setup creates persistent **hyper-reV** and **Safe Windows** `Boot####` entries visible in `bcdedit /enum firmware`, sets `BootOrder` to `[hyper-reV, Safe Windows, ...original order]`, and selects hyper-reV through `BootNext`. Safe Windows starts the stock Windows boot manager directly, separately from Windows Safe Mode. Original entries remain; the native helper verifies Microsoft signature and version identity, leaves an intact canonical boot manager untouched, and restores a missing copy only from a verified Windows copy or ESP backup.
+
+Repeated setup with a matching journal, entries, and files is idempotent. Updates restore the previous owned installation and archive its journal before creating a fresh plan; unknown state stops setup. Secure Boot must already be off and Hyper-V binaries present; setup checks rather than changes these settings. Restart remains manual. Development live checks use Inspect/Plan only, leaving boot writes and restarts outside smoke testing. The Python tool in section 7.6 remains the separate one-time boot path.
+
 # 8. Source code
 The source code can be found on this [GitHub](https://github.com/noahware/hyper-reV).
 
